@@ -48,7 +48,8 @@ jobs:
     # TODO: once a trusted publisher is configured on npmjs.com (package
     # Settings → Trusted Publisher; workflow ci.yml, repo
     # rhombus-redux/inferred-effigy, no environment), restore `id-token: write`
-    # here and drop the NPM_TOKEN env below to publish via OIDC provenance.
+    # here, drop the NPM_TOKEN env below, and flip publishConfig.provenance
+    # back to true in package.json to publish via OIDC with provenance.
     # Until then OIDC auto-detection would pre-empt token auth and fail, so we
     # authenticate with the NPM_TOKEN repo secret instead.
     permissions:
