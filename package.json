@@ -1,11 +1,63 @@
 {
-  "name": "__PACKAGE_NAME__",
+  "name": "@rhombus-redux/inferred-effigy",
   "version": "0.0.0",
-  "description": "__DESCRIPTION__",
+  "description": "Like createSlice, but arbitrary-depth and decoupled from Redux. Type-level tree transposition with a tiny proxy runtime.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
-    "build": "echo 'TODO: add build command' && exit 1",
-    "test": "echo 'TODO: add test command' && exit 1",
-    "lint": "echo 'TODO: add lint command' && exit 1"
+    "build": "tsup",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "prepublishOnly": "npm run build"
+  },
+  "license": "MIT",
+  "author": "Thomas Butler",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rhombus-redux/inferred-effigy.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rhombus-redux/inferred-effigy/issues"
+  },
+  "homepage": "https://github.com/rhombus-redux/inferred-effigy#readme",
+  "keywords": [
+    "redux",
+    "createSlice",
+    "action-creators",
+    "typescript",
+    "type-level",
+    "proxy",
+    "command-pattern"
+  ],
+  "dependencies": {
+    "@rhombus-toolkit/func": "^3.5.3",
+    "@rhombus-toolkit/type-helpers": "^1.10.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^4.1.8"
   },
   "publishConfig": {
     "access": "public",
