@@ -21,6 +21,21 @@ const demohandlers = {
 } satisfies HandlerMap;
 type DH = typeof demohandlers;
 
+describe('negative type contracts (F6)', () => {
+  it('withTransform rejects a key not registered in PayloadTransforms', () => {
+    // @ts-expect-error 'notARealKey' is not a TransformKey. vitest typecheck
+    // honors @ts-expect-error — if this call ever stopped erroring, the unused
+    // suppression would itself fail, locking the contract.
+    effigy(demohandlers).withTransform('notARealKey');
+  });
+
+  it('accessing a nonexistent leaf on the creator tree is a type error', () => {
+    const creators = effigy(demohandlers).getCreators();
+    // @ts-expect-error 'doesNotExist' is not a key of the handler tree.
+    creators.doesNotExist;
+  });
+});
+
 describe('creators — reducer transform leaves', () => {
   const creators = effigy(demohandlers).withTransform('reducer').getCreators();
 
@@ -69,16 +84,36 @@ describe('Messages union', () => {
     >();
   });
 
-  it('default: payload includes the leading state arg', () => {
+  it('default: exact union — full param list, MUTABLE tuples (state included)', () => {
     type MD = Messages<DH>;
-    // membership: under the identity (default) transform the payload keeps the
-    // full handler parameter list — state included — as a mutable tuple.
-    type IsMember = Message<'dothis', [state: State, n: number]> extends MD ? true : false;
-    expectTypeOf<IsMember>().toEqualTypeOf<true>();
+    // The identity (default) transform keeps the handler's full parameter list,
+    // state included, as a MUTABLE tuple (the reducer transform wraps in
+    // Readonly; default does not). Pin the whole union exactly so a
+    // mutable→readonly payload regression is caught — a one-directional
+    // `extends` membership check would miss it.
+    expectTypeOf<MD>().toEqualTypeOf<
+      | Message<'dothis', [state: State, n: number]>
+      | Message<'dothat', [state: State, s: string]>
+      | Message<'huzza.ineedtopee.rightnow', [state: State]>
+      | Message<'huzza.omgaw', [state: State, b: boolean, n: number]>
+    >();
   });
 });
 
 describe('Creators full shape', () => {
+  it('default: every leaf a message creator with the full MUTABLE param list', () => {
+    expectTypeOf<Creators<DH, 'default'>>().toEqualTypeOf<{
+      dothis: Func<[state: State, n: number], Message<'dothis', [state: State, n: number]>>,
+      dothat: Func<[state: State, s: string], Message<'dothat', [state: State, s: string]>>,
+      huzza: {
+        ineedtopee: {
+          rightnow: Func<[state: State], Message<'huzza.ineedtopee.rightnow', [state: State]>>,
+        },
+        omgaw: Func<[state: State, b: boolean, n: number], Message<'huzza.omgaw', [state: State, b: boolean, n: number]>>,
+      },
+    }>();
+  });
+
   it('reducer (neh): every leaf a message creator', () => {
     expectTypeOf<Creators<DH, 'reducer'>>().toEqualTypeOf<{
       dothis: Func<readonly [n: number], Message<'dothis', readonly [n: number]>>,
