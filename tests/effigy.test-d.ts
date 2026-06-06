@@ -1,0 +1,226 @@
+import { describe, expectTypeOf, it } from 'vitest';
+import type { Func } from '@rhombus-toolkit/func';
+import {
+  effigy,
+  type Creators,
+  type HandlerMap,
+  type Message,
+  type Messages,
+} from '../src/index.js';
+
+type State = '😀';
+const demohandlers = {
+  dothis(state: State, n: number) { return state; },
+  dothat(state: State, s: string) { return state; },
+  huzza: {
+    ineedtopee: {
+      rightnow: (state: State) => state,
+    },
+    omgaw(state: State, b: boolean, n: number) { return state; },
+  },
+} satisfies HandlerMap;
+type DH = typeof demohandlers;
+
+describe('negative type contracts (F6)', () => {
+  it('withTransform rejects a key not registered in PayloadTransforms', () => {
+    // @ts-expect-error 'notARealKey' is not a TransformKey. vitest typecheck
+    // honors @ts-expect-error — if this call ever stopped erroring, the unused
+    // suppression would itself fail, locking the contract.
+    effigy(demohandlers).withTransform('notARealKey');
+  });
+
+  it('accessing a nonexistent leaf on the creator tree is a type error', () => {
+    const creators = effigy(demohandlers).getCreators();
+    // @ts-expect-error 'doesNotExist' is not a key of the handler tree.
+    const bad = creators.doesNotExist;
+    void bad;
+  });
+});
+
+describe('creators — reducer transform leaves', () => {
+  const creators = effigy(demohandlers).withTransform('reducer').getCreators();
+
+  it('shallow leaves drop the state arg', () => {
+    expectTypeOf(creators.dothis).toEqualTypeOf<
+      Func<readonly [n: number], Message<'dothis', readonly [n: number]>>
+    >();
+    expectTypeOf(creators.dothat).toEqualTypeOf<
+      Func<readonly [s: string], Message<'dothat', readonly [s: string]>>
+    >();
+  });
+
+  it('deep leaves carry the dotted path', () => {
+    expectTypeOf(creators.huzza.ineedtopee.rightnow).toEqualTypeOf<
+      Func<readonly [], Message<'huzza.ineedtopee.rightnow', readonly []>>
+    >();
+    expectTypeOf(creators.huzza.omgaw).toEqualTypeOf<
+      Func<readonly [b: boolean, n: number], Message<'huzza.omgaw', readonly [b: boolean, n: number]>>
+    >();
+  });
+});
+
+describe('creators — onInvoke return replaces the message', () => {
+  const auto = effigy(demohandlers).withTransform('reducer').getCreators((msg) => {
+    // msg is the discriminated union; narrowing on type narrows payload.
+    if (msg.type === 'huzza.omgaw') {
+      expectTypeOf(msg.payload).toEqualTypeOf<Readonly<[b: boolean, n: number]>>();
+    }
+    return 33;
+  });
+
+  it('leaves return the callback result, not the message', () => {
+    expectTypeOf(auto.dothis).toEqualTypeOf<Func<readonly [n: number], number>>();
+    expectTypeOf(auto.huzza.omgaw).toEqualTypeOf<Func<readonly [b: boolean, n: number], number>>();
+  });
+});
+
+describe('Messages union', () => {
+  it('reducer: each member present, payload sans state', () => {
+    type MR = Messages<DH, 'reducer'>;
+    expectTypeOf<MR>().toEqualTypeOf<
+      | Message<'dothis', readonly [n: number]>
+      | Message<'dothat', readonly [s: string]>
+      | Message<'huzza.ineedtopee.rightnow', readonly []>
+      | Message<'huzza.omgaw', readonly [b: boolean, n: number]>
+    >();
+  });
+
+  it('default: exact union — full param list, MUTABLE tuples (state included)', () => {
+    type MD = Messages<DH>;
+    // The identity (default) transform keeps the handler's full parameter list,
+    // state included, as a MUTABLE tuple (the reducer transform wraps in
+    // Readonly; default does not). Pin the whole union exactly so a
+    // mutable→readonly payload regression is caught — a one-directional
+    // `extends` membership check would miss it.
+    expectTypeOf<MD>().toEqualTypeOf<
+      | Message<'dothis', [state: State, n: number]>
+      | Message<'dothat', [state: State, s: string]>
+      | Message<'huzza.ineedtopee.rightnow', [state: State]>
+      | Message<'huzza.omgaw', [state: State, b: boolean, n: number]>
+    >();
+  });
+});
+
+describe('Creators full shape', () => {
+  it('default: every leaf a message creator with the full MUTABLE param list', () => {
+    expectTypeOf<Creators<DH, 'default'>>().toEqualTypeOf<{
+      dothis: Func<[state: State, n: number], Message<'dothis', [state: State, n: number]>>,
+      dothat: Func<[state: State, s: string], Message<'dothat', [state: State, s: string]>>,
+      huzza: {
+        ineedtopee: {
+          rightnow: Func<[state: State], Message<'huzza.ineedtopee.rightnow', [state: State]>>,
+        },
+        omgaw: Func<[state: State, b: boolean, n: number], Message<'huzza.omgaw', [state: State, b: boolean, n: number]>>,
+      },
+    }>();
+  });
+
+  it('reducer (neh): every leaf a message creator', () => {
+    expectTypeOf<Creators<DH, 'reducer'>>().toEqualTypeOf<{
+      dothis: Func<readonly [n: number], Message<'dothis', readonly [n: number]>>,
+      dothat: Func<readonly [s: string], Message<'dothat', readonly [s: string]>>,
+      huzza: {
+        ineedtopee: {
+          rightnow: Func<readonly [], Message<'huzza.ineedtopee.rightnow', readonly []>>,
+        },
+        omgaw: Func<readonly [b: boolean, n: number], Message<'huzza.omgaw', readonly [b: boolean, n: number]>>,
+      },
+    }>();
+  });
+
+  it('reducer + return (noh): every leaf returns the override type', () => {
+    expectTypeOf<Creators<DH, 'reducer', number>>().toEqualTypeOf<{
+      dothis: Func<readonly [n: number], number>,
+      dothat: Func<readonly [s: string], number>,
+      huzza: {
+        ineedtopee: { rightnow: Func<readonly [], number> },
+        omgaw: Func<readonly [b: boolean, n: number], number>,
+      },
+    }>();
+  });
+});
+
+describe('squash type', () => {
+  it('has exactly the four dotted keys with handler Func types', () => {
+    const flat = effigy(demohandlers).squash();
+    expectTypeOf(flat).toEqualTypeOf<{
+      dothis: Func<[state: State, n: number], State>,
+      dothat: Func<[state: State, s: string], State>,
+      'huzza.ineedtopee.rightnow': Func<[state: State], State>,
+      'huzza.omgaw': Func<[state: State, b: boolean, n: number], State>,
+    }>();
+  });
+});
+
+describe('never-returning onInvoke (F10)', () => {
+  // An onInvoke that always throws is typed () => never. The leaf creators must
+  // return never, not silently fall back to the Message branch — `never` is the
+  // bottom type, so the no-callback sentinel must distinguish the two cases.
+  const creators = effigy(demohandlers)
+    .withTransform('reducer')
+    .getCreators((_msg): never => { throw new Error('boom'); });
+
+  it('every leaf creator returns never', () => {
+    expectTypeOf<ReturnType<typeof creators.dothis>>().toEqualTypeOf<never>();
+    expectTypeOf<ReturnType<typeof creators.huzza.omgaw>>().toEqualTypeOf<never>();
+  });
+
+  it('the no-callback case still returns the Message (sentinel not confused with never)', () => {
+    const plain = effigy(demohandlers).withTransform('reducer').getCreators();
+    expectTypeOf<ReturnType<typeof plain.dothis>>().toEqualTypeOf<
+      Message<'dothis', readonly [n: number]>
+    >();
+  });
+});
+
+describe('numeric-literal handler keys (F9)', () => {
+  // The runtime stringifies keys via Object.entries, so a numeric key 1 becomes
+  // the string "1". The types must agree: `string & 1` is never, which used to
+  // drop numeric leaves from Messages and type their Creators as never.
+  const numh = { 1: (s: string) => s, two: (n: number) => n } satisfies HandlerMap;
+  type NumH = typeof numh;
+
+  it('Messages carries the numeric key as its stringified literal "1"', () => {
+    type M = Messages<NumH>;
+    type Has1 = Message<'1', [s: string]> extends M ? true : false;
+    expectTypeOf<Has1>().toEqualTypeOf<true>();
+  });
+
+  it('the Creators leaf for a numeric key is callable, typed with "1"', () => {
+    type Leaf = Creators<NumH, 'default'>[1];
+    expectTypeOf<Leaf>().toEqualTypeOf<Func<[s: string], Message<'1', [s: string]>>>();
+  });
+});
+
+describe('depth ceiling (F3): Creators and Messages share the same cutoff', () => {
+  // Empirically measured: the vendored flattenMap (and now Creators) supports
+  // up to 9 nesting levels. The leaf at depth 9 resolves; depth 10 and beyond
+  // collapse to `never` on BOTH sides. These two handler trees straddle that
+  // boundary by exactly one level.
+  const d9 = { a: { a: { a: { a: { a: { a: { a: { a: { a: (s: string) => s } } } } } } } } } satisfies HandlerMap;
+  const d10 = { a: { a: { a: { a: { a: { a: { a: { a: { a: { a: (s: string) => s } } } } } } } } } } satisfies HandlerMap;
+  type D9 = typeof d9;
+  type D10 = typeof d10;
+
+  type IsNever<T> = [T] extends [never] ? true : false;
+  type D9Key = 'a.a.a.a.a.a.a.a.a';
+
+  it('at the max supported depth (9) Messages is fully typed', () => {
+    expectTypeOf<Messages<D9>>().toEqualTypeOf<Message<D9Key, [s: string]>>();
+  });
+
+  it('at the max supported depth (9) the Creators leaf is fully typed', () => {
+    expectTypeOf<D9['a']['a']['a']['a']['a']['a']['a']['a']['a']>().toEqualTypeOf<(s: string) => string>();
+    type Leaf = Creators<D9, 'default'>['a']['a']['a']['a']['a']['a']['a']['a']['a'];
+    expectTypeOf<Leaf>().toEqualTypeOf<Func<[s: string], Message<D9Key, [s: string]>>>();
+  });
+
+  it('one level past the ceiling (10) Messages collapses to never', () => {
+    expectTypeOf<IsNever<Messages<D10>>>().toEqualTypeOf<true>();
+  });
+
+  it('one level past the ceiling (10) the Creators leaf collapses to never', () => {
+    type Leaf = Creators<D10, 'default'>['a']['a']['a']['a']['a']['a']['a']['a']['a']['a'];
+    expectTypeOf<IsNever<Leaf>>().toEqualTypeOf<true>();
+  });
+});
