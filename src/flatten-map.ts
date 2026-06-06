@@ -22,7 +22,10 @@ type fromEntries<T extends readonly [PropertyKey, any]> = {
 type _flattenMap<T extends DeepDictionaryItem<Func>, prefix extends string = '', CurrentDepth extends number = 0> =
   CurrentDepth extends 10 ? never :
   T extends DeepDictionary<Func> ? {
-    [K in keyof T]: _flattenMap<T[K], prefix extends '' ? string & K : `${prefix}.${string & K}`, Inc<CurrentDepth>>
+    // `${K & (string | number)}` (not `string & K`) so a numeric-literal key
+    // stringifies into the dotted path instead of collapsing to `never`,
+    // matching the runtime's Object.entries key stringification.
+    [K in keyof T]: _flattenMap<T[K], prefix extends '' ? `${K & (string | number)}` : `${prefix}.${K & (string | number)}`, Inc<CurrentDepth>>
   }[keyof T] : [prefix, T];
 
 export type flattenMap<T extends DeepDictionary<Func>> = fromEntries<_flattenMap<T>>;

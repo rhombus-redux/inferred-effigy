@@ -116,6 +116,25 @@ describe('squash type', () => {
   });
 });
 
+describe('numeric-literal handler keys (F9)', () => {
+  // The runtime stringifies keys via Object.entries, so a numeric key 1 becomes
+  // the string "1". The types must agree: `string & 1` is never, which used to
+  // drop numeric leaves from Messages and type their Creators as never.
+  const numh = { 1: (s: string) => s, two: (n: number) => n } satisfies HandlerMap;
+  type NumH = typeof numh;
+
+  it('Messages carries the numeric key as its stringified literal "1"', () => {
+    type M = Messages<NumH>;
+    type Has1 = Message<'1', [s: string]> extends M ? true : false;
+    expectTypeOf<Has1>().toEqualTypeOf<true>();
+  });
+
+  it('the Creators leaf for a numeric key is callable, typed with "1"', () => {
+    type Leaf = Creators<NumH, 'default'>[1];
+    expectTypeOf<Leaf>().toEqualTypeOf<Func<[s: string], Message<'1', [s: string]>>>();
+  });
+});
+
 describe('depth ceiling (F3): Creators and Messages share the same cutoff', () => {
   // Empirically measured: the vendored flattenMap (and now Creators) supports
   // up to 9 nesting levels. The leaf at depth 9 resolves; depth 10 and beyond

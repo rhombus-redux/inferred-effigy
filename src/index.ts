@@ -23,7 +23,10 @@ export type TransformKey = keyof PayloadTransforms<any>;
 type Transform<Args extends readonly any[], Key extends TransformKey> = PayloadTransforms<Args>[Key];
 
 type MessagesFlat<T extends Dictionary<Func>, Key extends TransformKey> = {
-  [K in keyof T]: T[K] extends Func<infer Args> ? Message<string & K, Transform<Args, Key>> : never;
+  // Coerce the key with a template literal rather than `string & K`: the latter
+  // is `never` for a numeric-literal key (`string & 1`), silently dropping it.
+  // Template coercion stringifies it to match the runtime's Object.entries.
+  [K in keyof T]: T[K] extends Func<infer Args> ? Message<`${K & (string | number)}`, Transform<Args, Key>> : never;
 }[keyof T];
 /** Union of every message the handler tree can produce under the given transform. */
 export type Messages<Map extends HandlerMap, Key extends TransformKey = 'default'> = MessagesFlat<flattenMap<Map>, Key>;
@@ -49,7 +52,9 @@ export type Creators<
 > =
   CurrentDepth extends 10 ? never :
   T extends HandlerMap ? {
-    [K in keyof T]: Creators<T[K], Key, Return, Join<[Prefix, string & K], '.'>, Inc<CurrentDepth>>
+    // `${K & (string | number)}` (not `string & K`) so numeric-literal keys
+    // stringify into the dotted path instead of collapsing to `never`.
+    [K in keyof T]: Creators<T[K], Key, Return, Join<[Prefix, `${K & (string | number)}`], '.'>, Inc<CurrentDepth>>
   } :
   T extends Func<infer Args> ? Func<Transform<Args, Key>, ([Return] extends [never] ? Message<Prefix, Transform<Args, Key>> : Return)> :
   never;

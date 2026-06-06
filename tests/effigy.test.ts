@@ -95,6 +95,20 @@ describe('transformKey getter', () => {
   });
 });
 
+describe('numeric-literal keys (F9)', () => {
+  const numh = { 1: (s: string) => s } as unknown as HandlerMap;
+
+  it('a numeric key produces a "1" type at runtime (matches the stringified key)', () => {
+    const creators = effigy(numh).getCreators();
+    expect((creators as any)[1]('hi')).toEqual({ type: '1', payload: ['hi'] });
+  });
+
+  it('squash stringifies the numeric key', () => {
+    const flat = effigy(numh).squash();
+    expect(Object.keys(flat)).toEqual(['1']);
+  });
+});
+
 describe('squash — invalid leaves (F4)', () => {
   it('throws a contextful error for a null leaf, naming the path and type', () => {
     const bad = { x: () => 1, z: null } as unknown as HandlerMap;
