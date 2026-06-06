@@ -32,14 +32,47 @@ export function flattenMap<T extends DeepDictionary<Func>>(map: T): flattenMap<T
   while (stack.length) {
     const [prefix, mapOrFun] = stack.pop()!;
     if (typeof mapOrFun === 'function') {
+      // A dotted leaf key (`'a.b'`) and a nested path (`a: { b }`) flatten to
+      // the same dotted key; without this guard one silently overwrites the
+      // other, order-dependently. Fail loudly naming the collision.
+      if (prefix in result) {
+        throw new Error(
+          `inferred-effigy: duplicate handler at "${prefix}" — a dotted key collides with a nested path`,
+        );
+      }
       result[prefix] = mapOrFun;
-    } else {
+    } else if (isPlainObject(mapOrFun)) {
       for (const [key, p] of Object.entries(mapOrFun)) {
         stack.push([join(prefix, key), p]);
       }
+    } else {
+      // Anything that is neither a function nor a plain nested map is an
+      // invalid leaf. Object.entries on it would either silently drop the key
+      // (primitives, arrays) or throw an opaque "Cannot convert undefined or
+      // null to object" with no path context. Throw a library-attributable
+      // error naming the offending path and the value's type instead.
+      throw new Error(
+        `inferred-effigy: invalid handler at "${prefix}" — expected function or nested map, got ${typeName(mapOrFun)}`,
+      );
     }
   }
   return result;
+}
+
+/** True for ordinary `{ … }` maps; false for null, arrays, class instances. */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/** A human-readable type label for an invalid-leaf error message. */
+function typeName(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  return typeof value;
 }
 
 function join(...args: string[]): string {

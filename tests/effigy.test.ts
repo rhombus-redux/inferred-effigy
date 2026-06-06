@@ -95,6 +95,56 @@ describe('transformKey getter', () => {
   });
 });
 
+describe('squash — invalid leaves (F4)', () => {
+  it('throws a contextful error for a null leaf, naming the path and type', () => {
+    const bad = { x: () => 1, z: null } as unknown as HandlerMap;
+    expect(() => effigy(bad).squash()).toThrowError(
+      /inferred-effigy: invalid handler at "z" — expected function or nested map, got null/,
+    );
+  });
+
+  it('throws a contextful error for an undefined leaf', () => {
+    const bad = { x: () => 1, z: undefined } as unknown as HandlerMap;
+    expect(() => effigy(bad).squash()).toThrowError(
+      /invalid handler at "z" — expected function or nested map, got undefined/,
+    );
+  });
+
+  it('throws a contextful error for a primitive (number) leaf — no silent drop', () => {
+    const bad = { x: () => 1, n: 5 } as unknown as HandlerMap;
+    expect(() => effigy(bad).squash()).toThrowError(
+      /invalid handler at "n" — expected function or nested map, got number/,
+    );
+  });
+
+  it('throws a contextful error for an array leaf', () => {
+    const bad = { x: () => 1, a: [1, 2] } as unknown as HandlerMap;
+    expect(() => effigy(bad).squash()).toThrowError(
+      /invalid handler at "a" — expected function or nested map, got array/,
+    );
+  });
+
+  it('names the dotted path for a nested invalid leaf', () => {
+    const bad = { outer: { inner: null } } as unknown as HandlerMap;
+    expect(() => effigy(bad).squash()).toThrowError(
+      /invalid handler at "outer.inner" — expected function or nested map, got null/,
+    );
+  });
+
+  it('keeps current behavior for an empty sub-map: produces no keys', () => {
+    const m = { x: () => 1, empty: {} } as unknown as HandlerMap;
+    const flat = effigy(m).squash();
+    expect(Object.keys(flat).sort()).toEqual(['x']);
+  });
+});
+
+describe('squash — dotted/nested key collision (F11)', () => {
+  it('throws naming the colliding key when a dotted key and nested path overlap', () => {
+    const clash = { 'a.b': () => 1, a: { b: () => 2 } } as unknown as HandlerMap;
+    expect(() => effigy(clash).squash()).toThrowError(/a\.b/);
+  });
+});
+
 describe('symbol property access', () => {
   it('String(node) does not throw', () => {
     const creators = effigy(demohandlers).getCreators();
