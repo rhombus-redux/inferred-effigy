@@ -32,6 +32,17 @@ type MessagesFlat<T extends Dictionary<Func>, Key extends TransformKey> = {
 export type Messages<Map extends HandlerMap, Key extends TransformKey = 'default'> = MessagesFlat<flattenMap<Map>, Key>;
 
 /**
+ * Sentinel marking "no onInvoke callback supplied" in {@link Creators}. A
+ * dedicated unique symbol (not `never`) so that an onInvoke that legitimately
+ * returns `never` — e.g. a dispatch that always throws — is not mistaken for
+ * the no-callback case and does not fall back to the message branch.
+ * @internal
+ */
+declare const NoReturn: unique symbol;
+/** @internal */
+export type NoReturn = typeof NoReturn;
+
+/**
  * The handler tree transposed: same shape, every leaf a creator function.
  *
  * Recursion is bounded by the same depth ceiling the vendored `flattenMap`
@@ -41,12 +52,14 @@ export type Messages<Map extends HandlerMap, Key extends TransformKey = 'default
  * both the creator and message sides rather than typing callable leaves whose
  * messages silently vanish.
  *
+ * @typeParam Return - the onInvoke return type; defaults to {@link NoReturn}
+ *   (no callback), which makes each leaf return its `Message` directly.
  * @typeParam CurrentDepth - internal recursion counter; do not pass explicitly.
  */
 export type Creators<
   T extends Func | HandlerMap,
   Key extends TransformKey,
-  Return = never,
+  Return = NoReturn,
   Prefix extends string = '',
   CurrentDepth extends number = 0,
 > =
@@ -56,7 +69,12 @@ export type Creators<
     // stringify into the dotted path instead of collapsing to `never`.
     [K in keyof T]: Creators<T[K], Key, Return, Join<[Prefix, `${K & (string | number)}`], '.'>, Inc<CurrentDepth>>
   } :
-  T extends Func<infer Args> ? Func<Transform<Args, Key>, ([Return] extends [never] ? Message<Prefix, Transform<Args, Key>> : Return)> :
+  // `[NoReturn] extends [Return]` (not the reverse): `never` is assignable to
+  // every tuple, so `[Return] extends [NoReturn]` would be true even when
+  // Return is `never` — misclassifying a never-returning onInvoke as the
+  // no-callback case. Asking instead whether NoReturn is assignable to Return
+  // is true only when Return *is* NoReturn.
+  T extends Func<infer Args> ? Func<Transform<Args, Key>, ([NoReturn] extends [Return] ? Message<Prefix, Transform<Args, Key>> : Return)> :
   never;
 
 export class EffigyBuilder<Map extends HandlerMap, Key extends TransformKey = 'default'> {

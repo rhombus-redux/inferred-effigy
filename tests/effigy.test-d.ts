@@ -116,6 +116,27 @@ describe('squash type', () => {
   });
 });
 
+describe('never-returning onInvoke (F10)', () => {
+  // An onInvoke that always throws is typed () => never. The leaf creators must
+  // return never, not silently fall back to the Message branch — `never` is the
+  // bottom type, so the no-callback sentinel must distinguish the two cases.
+  const creators = effigy(demohandlers)
+    .withTransform('reducer')
+    .getCreators((_msg): never => { throw new Error('boom'); });
+
+  it('every leaf creator returns never', () => {
+    expectTypeOf<ReturnType<typeof creators.dothis>>().toEqualTypeOf<never>();
+    expectTypeOf<ReturnType<typeof creators.huzza.omgaw>>().toEqualTypeOf<never>();
+  });
+
+  it('the no-callback case still returns the Message (sentinel not confused with never)', () => {
+    const plain = effigy(demohandlers).withTransform('reducer').getCreators();
+    expectTypeOf<ReturnType<typeof plain.dothis>>().toEqualTypeOf<
+      Message<'dothis', readonly [n: number]>
+    >();
+  });
+});
+
 describe('numeric-literal handler keys (F9)', () => {
   // The runtime stringifies keys via Object.entries, so a numeric key 1 becomes
   // the string "1". The types must agree: `string & 1` is never, which used to
