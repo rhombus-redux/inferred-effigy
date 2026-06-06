@@ -1,5 +1,5 @@
 import type { DeepDictionary, Dictionary, Func, Inc, Join } from './toolkit-types.js';
-import { flattenMap } from './flatten-map.js';
+import { flattenMap, type FlattenMap } from './flatten-map.js';
 
 /** The constraint for handler trees: arbitrarily nested string-keyed maps with function leaves. */
 export type HandlerMap = DeepDictionary<Func>;
@@ -28,7 +28,7 @@ type MessagesFlat<T extends Dictionary<Func>, Key extends TransformKey> = {
   [K in keyof T]: T[K] extends Func<infer Args> ? Message<`${K & (string | number)}`, Transform<Args, Key>> : never;
 }[keyof T];
 /** Union of every message the handler tree can produce under the given transform. */
-export type Messages<Map extends HandlerMap, Key extends TransformKey = 'default'> = MessagesFlat<flattenMap<Map>, Key>;
+export type Messages<Map extends HandlerMap, Key extends TransformKey = 'default'> = MessagesFlat<FlattenMap<Map>, Key>;
 
 /**
  * Sentinel marking "no onInvoke callback supplied" in {@link Creators}. A
@@ -91,7 +91,7 @@ export class EffigyBuilder<Map extends HandlerMap, Key extends TransformKey = 'd
   withTransform<K extends TransformKey>(key: K): EffigyBuilder<Map, K> {
     return new EffigyBuilder(this.#map, key);
   }
-  squash(): flattenMap<Map> {
+  squash(): FlattenMap<Map> {
     return flattenMap(this.#map);
   }
   getCreators(): Creators<Map, Key>;

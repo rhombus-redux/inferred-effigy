@@ -14,21 +14,25 @@
 // published.
 import type { DeepDictionary, DeepDictionaryItem, Func, Inc } from './toolkit-types.js';
 
-type fromEntries<T extends readonly [PropertyKey, any]> = {
+type FromEntries<T extends readonly [PropertyKey, any]> = {
   [E in T as E[0]]: E[1];
 };
 
-type _flattenMap<T extends DeepDictionaryItem<Func>, prefix extends string = '', CurrentDepth extends number = 0> =
+type _FlattenMap<T extends DeepDictionaryItem<Func>, Prefix extends string = '', CurrentDepth extends number = 0> =
   CurrentDepth extends 10 ? never :
   T extends DeepDictionary<Func> ? {
     // `${K & (string | number)}` (not `string & K`) so a numeric-literal key
     // stringifies into the dotted path instead of collapsing to `never`,
     // matching the runtime's Object.entries key stringification.
-    [K in keyof T]: _flattenMap<T[K], prefix extends '' ? `${K & (string | number)}` : `${prefix}.${K & (string | number)}`, Inc<CurrentDepth>>
-  }[keyof T] : [prefix, T];
+    [K in keyof T]: _FlattenMap<T[K], Prefix extends '' ? `${K & (string | number)}` : `${Prefix}.${K & (string | number)}`, Inc<CurrentDepth>>
+  }[keyof T] : [Prefix, T];
 
-export type flattenMap<T extends DeepDictionary<Func>> = fromEntries<_flattenMap<T>>;
-export function flattenMap<T extends DeepDictionary<Func>>(map: T): flattenMap<T> {
+/**
+ * The handler tree flattened to a single-level record keyed by dotted path.
+ * The runtime counterpart is the {@link flattenMap} function.
+ */
+export type FlattenMap<T extends DeepDictionary<Func>> = FromEntries<_FlattenMap<T>>;
+export function flattenMap<T extends DeepDictionary<Func>>(map: T): FlattenMap<T> {
   const result: any = {};
   const stack = Object.entries(map);
   while (stack.length) {
