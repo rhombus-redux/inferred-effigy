@@ -1,0 +1,84 @@
+import type { Func } from '@rhombus-toolkit/func';
+import type { DeepDictionary, Dictionary, Join } from '@rhombus-toolkit/type-helpers';
+import { flattenMap } from './flatten-map.js';
+
+/** The constraint for handler trees: arbitrarily nested string-keyed maps with function leaves. */
+export type HandlerMap = DeepDictionary<Func>;
+
+export type Message<T extends string, P extends readonly any[]> = { type: T, payload: P };
+
+/**
+ * Registry of payload transforms — how a handler's parameter list maps to its
+ * creator's parameter list / message payload. Augmentable from user code via
+ * declaration merging; pass the key to `withTransform`.
+ */
+export interface PayloadTransforms<TArgs extends readonly any[] = any> {
+  /** identity — creator takes exactly the handler's parameters */
+  default: TArgs;
+  /** drops the leading state parameter — creator takes the handler's remaining parameters */
+  reducer: TArgs extends readonly [any, ...infer Rest] ? Readonly<Rest> : readonly [];
+}
+
+export type TransformKey = keyof PayloadTransforms<any>;
+type Transform<Args extends readonly any[], Key extends TransformKey> = PayloadTransforms<Args>[Key];
+
+type MessagesFlat<T extends Dictionary<Func>, Key extends TransformKey> = {
+  [K in keyof T]: T[K] extends Func<infer Args> ? Message<string & K, Transform<Args, Key>> : never;
+}[keyof T];
+/** Union of every message the handler tree can produce under the given transform. */
+export type Messages<Map extends HandlerMap, Key extends TransformKey = 'default'> = MessagesFlat<flattenMap<Map>, Key>;
+
+/** The handler tree transposed: same shape, every leaf a creator function. */
+export type Creators<T extends Func | HandlerMap, Key extends TransformKey, Return = never, prefix extends string = ''> =
+  T extends HandlerMap ? {
+    [K in keyof T]: Creators<T[K], Key, Return, Join<[prefix, string & K], '.'>>
+  } :
+  T extends Func<infer Args> ? Func<Transform<Args, Key>, ([Return] extends [never] ? Message<prefix, Transform<Args, Key>> : Return)> :
+  never;
+
+export class EffigyBuilder<Map extends HandlerMap, Key extends TransformKey = 'default'> {
+  readonly #map: Map;
+  readonly #transformKey: Key;
+  /** Prefer the `effigy()` factory. */
+  constructor(map: Map, transformKey: Key) {
+    this.#map = map;
+    this.#transformKey = transformKey;
+  }
+  /** The transform key this builder is configured with (transforms are type-level only). */
+  get transformKey(): Key {
+    return this.#transformKey;
+  }
+  withTransform<K extends TransformKey>(key: K): EffigyBuilder<Map, K> {
+    return new EffigyBuilder(this.#map, key);
+  }
+  squash(): flattenMap<Map> {
+    return flattenMap(this.#map);
+  }
+  getCreators(): Creators<Map, Key>;
+  getCreators<TReturn>(onInvoke: Func<[msg: Messages<Map, Key>], TReturn>): Creators<Map, Key, TReturn>;
+  getCreators(onInvoke?: any): any {
+    function _getCreators(path?: string): any {
+      return new Proxy(() => { }, {
+        get(target, prop) {
+          return _getCreators([path, prop].filter(Boolean).join('.'));
+        },
+        apply(target, thisArg, payload: any) {
+          if (!path) {
+            throw new Error('Cannot invoke the root command map object');
+          }
+          const msg = { type: path, payload };
+          if (onInvoke) {
+            return onInvoke(msg);
+          }
+          return msg;
+        },
+      });
+    }
+    return _getCreators();
+  }
+}
+
+/** Front door: wrap a handler tree, then `.withTransform(...)` / `.getCreators(...)`. */
+export function effigy<Map extends HandlerMap>(handlers: Map): EffigyBuilder<Map, 'default'> {
+  return new EffigyBuilder(handlers, 'default');
+}
