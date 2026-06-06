@@ -60,6 +60,31 @@ export class EffigyBuilder<Map extends HandlerMap, Key extends TransformKey = 'd
     function _getCreators(path?: string): any {
       return new Proxy(() => { }, {
         get(target, prop) {
+          // Symbol props (Symbol.iterator, Symbol.toPrimitive, …) can't be
+          // joined into a dotted path — passing one to String#join throws
+          // `Cannot convert a Symbol value to a string`. Forward them to the
+          // target so `String(node)`, `Array.from(node)`, template coercion
+          // etc. behave like an ordinary function object.
+          if (typeof prop === 'symbol') {
+            return Reflect.get(target, prop);
+          }
+          // `then` is reserved: if a node exposed a callable `then`, every node
+          // would look like a thenable and `await node` / `Promise.resolve(node)`
+          // would hang forever (the apply trap never calls resolve/reject).
+          // Returning undefined makes nodes non-thenable, so awaiting one yields
+          // the node itself. `then` therefore cannot be used as a handler key.
+          if (prop === 'then') {
+            return undefined;
+          }
+          // Primitive-coercion hooks: forward to the function target so
+          // `String(node)` / template interpolation coerce like an ordinary
+          // function object instead of recursing into a fresh proxy (which has
+          // no primitive form and throws "Cannot convert object to primitive
+          // value"). These names — like `then` — are reserved, not usable as
+          // handler keys.
+          if (prop === 'toString' || prop === 'valueOf') {
+            return Reflect.get(target, prop);
+          }
           return _getCreators([path, prop].filter(Boolean).join('.'));
         },
         apply(target, thisArg, payload: any) {

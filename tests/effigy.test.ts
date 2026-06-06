@@ -94,3 +94,47 @@ describe('transformKey getter', () => {
     expect(base.withTransform('reducer').transformKey).toBe('reducer');
   });
 });
+
+describe('symbol property access', () => {
+  it('String(node) does not throw', () => {
+    const creators = effigy(demohandlers).getCreators();
+    expect(() => String(creators.huzza)).not.toThrow();
+  });
+
+  it('template interpolation does not throw', () => {
+    const creators = effigy(demohandlers).getCreators();
+    expect(() => `${creators.huzza}`).not.toThrow();
+  });
+
+  it('Array.from(node) does not throw and yields []', () => {
+    const creators = effigy(demohandlers).getCreators();
+    expect(() => Array.from(creators.huzza as any)).not.toThrow();
+    expect(Array.from(creators.huzza as any)).toEqual([]);
+  });
+
+  it('node[Symbol.iterator] is undefined (not a path-extending proxy)', () => {
+    const creators = effigy(demohandlers).getCreators();
+    expect((creators.huzza as any)[Symbol.iterator]).toBeUndefined();
+  });
+});
+
+describe('then trap (thenable poisoning)', () => {
+  it('node.then is undefined so a node is not a thenable', () => {
+    const creators = effigy(demohandlers).getCreators();
+    expect(typeof (creators.huzza as any).then).toBe('undefined');
+  });
+
+  it('await Promise.resolve(node) resolves to the node itself', async () => {
+    const creators = effigy(demohandlers).getCreators();
+    const node = creators.huzza;
+    const awaited = await Promise.resolve(node);
+    expect(awaited).toBe(node);
+  });
+
+  it('await node resolves to the node itself', async () => {
+    const creators = effigy(demohandlers).getCreators();
+    const node = creators.huzza;
+    const awaited = await (node as any);
+    expect(awaited).toBe(node);
+  });
+});
