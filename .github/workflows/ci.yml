@@ -79,6 +79,23 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # @semantic-release/github has no per-release prerelease option (only
+      # branch-level `prerelease`, which would switch versioning to
+      # 1.0.0-next.N), so mark the just-created release as a pre-release
+      # explicitly. The promote job flips it back with --prerelease=false.
+      # semantic-release tags HEAD when it releases; on no-release runs there
+      # is no tag at HEAD and this is a no-op.
+      - name: Mark GitHub release as pre-release (promote flips it)
+        run: |
+          TAG=$(git describe --tags --exact-match HEAD 2>/dev/null || true)
+          if [ -n "$TAG" ]; then
+            gh release edit "$TAG" --prerelease=true
+            echo "marked $TAG as pre-release"
+          else
+            echo "no release created on this run — skipping"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ── Promote @next → @latest ───────────────────────────────────────────────
   # Triggered manually via "Run workflow" in the GitHub Actions UI.
