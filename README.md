@@ -130,6 +130,8 @@ flat['user.rename'] === handlers.user.rename; // true
 
 `squash()` is independent of the transform key — it reflects the raw handler tree.
 
+It validates as it flattens. A leaf that is neither a function nor a plain nested map (a `null`, a primitive, an array) throws an error naming the offending dotted path and the value's type, rather than silently dropping the key or surfacing an opaque `Cannot convert undefined or null to object`. A dotted key that collides with a nested path — `{ 'a.b': f, a: { b: g } }` both flatten to `'a.b'` — also throws, naming the collision, instead of one silently overwriting the other.
+
 ## API reference
 
 ### `effigy(handlers)`
@@ -156,9 +158,9 @@ Returns a new builder with the transform key set to `K`. `K` must be a `Transfor
 
 Builds and returns the creator tree via a recursive Proxy. With no argument, every leaf creator returns `Message<path, payload>`. With an `onInvoke` callback, every leaf creator passes its message to the callback and returns the callback's result. The root proxy node is not invokable — calling it directly throws `'Cannot invoke the root command map object'`.
 
-#### `squash(): flattenMap<Map>`
+#### `squash(): FlattenMap<Map>`
 
-Flattens the handler tree to `{ [dottedPath: string]: Func }`. Keys are joined with `'.'`. Leaves are reference-identical to the originals. The transform key is not involved.
+Flattens the handler tree to `{ [dottedPath: string]: Func }`. Keys are joined with `'.'`. Leaves are reference-identical to the originals. The transform key is not involved. Throws on an invalid leaf or a dotted-key/nested-path collision (see the [squash()](#squash) section above).
 
 #### `transformKey: Key`
 
@@ -186,18 +188,19 @@ The discriminated union of every message the handler tree can produce under the 
 
 ---
 
-### `Creators<T, Key, Return, prefix>`
+### `Creators<T, Key, Return, Prefix>`
 
 ```ts
 type Creators<
   T extends Func | HandlerMap,
   Key extends TransformKey,
-  Return = never,       // never → leaf returns Message; otherwise → leaf returns Return
-  prefix extends string = ''
+  Return = NoReturn,    // NoReturn → leaf returns Message; otherwise → leaf returns Return
+  Prefix extends string = ''
+  // (plus an internal CurrentDepth counter — never pass it explicitly)
 >
 ```
 
-The transposed tree type. For each branch in `T`, produces an object with the same keys. For each leaf function, produces a creator `Func<Transform<Args, Key>, Return | Message<path, payload>>`. When `Return` is `never` (the default, representing the no-callback case), the leaf returns its message directly.
+The transposed tree type. For each branch in `T`, produces an object with the same keys. For each leaf function, produces a creator `Func<Transform<Args, Key>, Return | Message<path, payload>>`. When `Return` is left at its default `NoReturn` sentinel — the no-callback case — the leaf returns its message directly. `NoReturn` is a dedicated unique symbol rather than `never`, so an `onInvoke` that legitimately returns `never` (e.g. a dispatch that always throws) types its leaves as `never` instead of falling back to the message branch. Recursion is bounded by the depth ceiling (see Limitations).
 
 ---
 
@@ -234,8 +237,18 @@ The constraint for handler trees: string-keyed objects, arbitrarily nested, with
 
 ## Notes and caveats
 
-- **Depth limit.** The type-level flattening used by `squash()` and `Messages` stops recursing at depth 10. Trees deeper than 10 levels produce `never` for the out-of-range branches. `getCreators()` has no hard runtime depth limit, but will silently produce broken types for branches beyond 10 levels.
-- **Key separator.** Nested keys are always joined with `'.'`. A key that itself contains `'.'` will produce an ambiguous dotted path — avoid dots in handler keys.
 - **Transforms are type-level only.** `withTransform` changes what TypeScript infers for the creator's parameter list. The runtime `getCreators` proxy does not inspect the transform key; it always captures every argument passed and stores them verbatim as the `payload` array.
 - **Root proxy is not callable.** Invoking the object returned by `getCreators()` directly (without first accessing a property) throws at runtime. Only leaf-path creators are callable.
 - **`squash()` is transform-agnostic.** It returns the original handler functions, not creator functions. The transform key on the builder has no effect on what `squash()` returns.
+
+## Limitations
+
+| # | Limitation |
+|---|---|
+| 1 | **Keys must be literal strings.** An index-signature map (`Record<string, …>`) degrades the message `type` to `string`; union-keyed handler maps aren't supported. Numeric-literal keys work — they stringify (`1` → `"1"`), matching the runtime. |
+| 2 | **Handlers are mandatory.** Optional handler properties (only expressible via a deliberately-optional type alias) collapse `Messages` to `unknown`. Every leaf must be present. |
+| 3 | **Dotted keys are reserved as path separators.** Nested keys are joined with `'.'`. A literal key containing `'.'` that collides with a nested path now throws at `squash()` (e.g. `{ 'a.b': f, a: { b: g } }`); a non-colliding dotted key still produces an ambiguous path — avoid dots in handler keys. |
+| 4 | **`then` is reserved.** Creator nodes deliberately expose no `then`, so `await node` resolves to the node itself rather than hanging. `then` (and the coercion hooks `toString` / `valueOf`) cannot be used as handler keys. |
+| 5 | **Creator leaves are Proxies, not real functions.** `.call` / `.apply` / `.bind` are not supported — invoke a creator directly. |
+| 6 | **`PayloadTransforms` augmentation is compilation-global.** Merging a custom transform widens `TransformKey` for every `effigy` user in the same TypeScript program, not just the declaring file. |
+| 7 | **Depth ceiling is 9 levels.** The type-level flattening behind `squash()`, `Messages` and `Creators` resolves leaves up to 9 nesting levels deep; at depth 10 and beyond the affected branches collapse to `never` consistently on both the message and creator sides. `getCreators()` has no hard *runtime* depth limit, but its *types* go `never` past the ceiling. |
