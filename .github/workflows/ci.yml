@@ -59,10 +59,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # semantic-release needs full history
+      # No registry-url here, deliberately: setup-node would write an .npmrc
+      # with `_authToken=${NODE_AUTH_TOKEN}` (unset in this job), which
+      # @semantic-release/npm treats as existing auth and skips its own
+      # NPM_TOKEN setup — `npm whoami` then goes out tokenless and 401s
+      # (EINVALIDNPMTOKEN). Without registry-url, semantic-release writes its
+      # own .npmrc from the NPM_TOKEN env below. (The promote job keeps
+      # registry-url because it pairs it with NODE_AUTH_TOKEN, as setup-node
+      # expects.)
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
-          registry-url: https://registry.npmjs.org
       - run: npm ci
       # --no-install: semantic-release and its plugins are pinned in
       # devDependencies, so run the installed version (reproducible) rather than
