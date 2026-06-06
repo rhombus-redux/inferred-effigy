@@ -115,3 +115,36 @@ describe('squash type', () => {
     }>();
   });
 });
+
+describe('depth ceiling (F3): Creators and Messages share the same cutoff', () => {
+  // Empirically measured: the vendored flattenMap (and now Creators) supports
+  // up to 9 nesting levels. The leaf at depth 9 resolves; depth 10 and beyond
+  // collapse to `never` on BOTH sides. These two handler trees straddle that
+  // boundary by exactly one level.
+  const d9 = { a: { a: { a: { a: { a: { a: { a: { a: { a: (s: string) => s } } } } } } } } } satisfies HandlerMap;
+  const d10 = { a: { a: { a: { a: { a: { a: { a: { a: { a: { a: (s: string) => s } } } } } } } } } } satisfies HandlerMap;
+  type D9 = typeof d9;
+  type D10 = typeof d10;
+
+  type IsNever<T> = [T] extends [never] ? true : false;
+  type D9Key = 'a.a.a.a.a.a.a.a.a';
+
+  it('at the max supported depth (9) Messages is fully typed', () => {
+    expectTypeOf<Messages<D9>>().toEqualTypeOf<Message<D9Key, [s: string]>>();
+  });
+
+  it('at the max supported depth (9) the Creators leaf is fully typed', () => {
+    expectTypeOf<D9['a']['a']['a']['a']['a']['a']['a']['a']['a']>().toEqualTypeOf<(s: string) => string>();
+    type Leaf = Creators<D9, 'default'>['a']['a']['a']['a']['a']['a']['a']['a']['a'];
+    expectTypeOf<Leaf>().toEqualTypeOf<Func<[s: string], Message<D9Key, [s: string]>>>();
+  });
+
+  it('one level past the ceiling (10) Messages collapses to never', () => {
+    expectTypeOf<IsNever<Messages<D10>>>().toEqualTypeOf<true>();
+  });
+
+  it('one level past the ceiling (10) the Creators leaf collapses to never', () => {
+    type Leaf = Creators<D10, 'default'>['a']['a']['a']['a']['a']['a']['a']['a']['a']['a'];
+    expectTypeOf<IsNever<Leaf>>().toEqualTypeOf<true>();
+  });
+});

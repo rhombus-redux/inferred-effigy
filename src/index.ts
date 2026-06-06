@@ -1,5 +1,5 @@
 import type { Func } from '@rhombus-toolkit/func';
-import type { DeepDictionary, Dictionary, Join } from '@rhombus-toolkit/type-helpers';
+import type { DeepDictionary, Dictionary, Inc, Join } from '@rhombus-toolkit/type-helpers';
 import { flattenMap } from './flatten-map.js';
 
 /** The constraint for handler trees: arbitrarily nested string-keyed maps with function leaves. */
@@ -28,12 +28,30 @@ type MessagesFlat<T extends Dictionary<Func>, Key extends TransformKey> = {
 /** Union of every message the handler tree can produce under the given transform. */
 export type Messages<Map extends HandlerMap, Key extends TransformKey = 'default'> = MessagesFlat<flattenMap<Map>, Key>;
 
-/** The handler tree transposed: same shape, every leaf a creator function. */
-export type Creators<T extends Func | HandlerMap, Key extends TransformKey, Return = never, prefix extends string = ''> =
+/**
+ * The handler tree transposed: same shape, every leaf a creator function.
+ *
+ * Recursion is bounded by the same depth ceiling the vendored `flattenMap`
+ * type enforces (see {@link FlattenMap}): the deepest leaf path that resolves
+ * is 9 nesting levels. Beyond that the branch collapses to `never`, exactly
+ * as `Messages` does — so an over-deep tree fails loudly and consistently on
+ * both the creator and message sides rather than typing callable leaves whose
+ * messages silently vanish.
+ *
+ * @typeParam CurrentDepth - internal recursion counter; do not pass explicitly.
+ */
+export type Creators<
+  T extends Func | HandlerMap,
+  Key extends TransformKey,
+  Return = never,
+  Prefix extends string = '',
+  CurrentDepth extends number = 0,
+> =
+  CurrentDepth extends 10 ? never :
   T extends HandlerMap ? {
-    [K in keyof T]: Creators<T[K], Key, Return, Join<[prefix, string & K], '.'>>
+    [K in keyof T]: Creators<T[K], Key, Return, Join<[Prefix, string & K], '.'>, Inc<CurrentDepth>>
   } :
-  T extends Func<infer Args> ? Func<Transform<Args, Key>, ([Return] extends [never] ? Message<prefix, Transform<Args, Key>> : Return)> :
+  T extends Func<infer Args> ? Func<Transform<Args, Key>, ([Return] extends [never] ? Message<Prefix, Transform<Args, Key>> : Return)> :
   never;
 
 export class EffigyBuilder<Map extends HandlerMap, Key extends TransformKey = 'default'> {
