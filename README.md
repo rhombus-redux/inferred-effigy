@@ -1,68 +1,75 @@
-# npm-template
+# @rhombus-redux/inferred-effigy
 
-A GitHub template for projects that publish to **npm**, with:
+Like `createSlice`, but arbitrary-depth and decoupled from Redux: type-level tree transposition with a tiny proxy runtime.
 
-- **OIDC trusted publishing** — no `NPM_TOKEN` secret; the workflow auths to
-  npm via GitHub Actions' OIDC identity, configured per-package and per-workflow.
-- **npm provenance** — every published version carries a verifiable build
-  attestation linking the artifact to this repo + the exact workflow run.
-- **`@next` → `@latest` promotion** — every PR merge publishes a `@next`
-  pre-release automatically; you promote to `@latest` manually through a
-  reviewer-gated workflow when the version is ready for general consumption.
+You write a tree of handlers; `inferred-effigy` hands you back the *same tree* with every leaf transposed into a typed message-creator — and a discriminated union of every message that tree can produce. No code generation, no string literals to keep in sync: the dotted message types are inferred from where the function lives in the tree.
 
-## What you get
+## Install
 
-Out of the box:
+```sh
+npm install @rhombus-redux/inferred-effigy
+```
 
-- `semantic-release` reads conventional-commit history on every push to
-  `main`, determines the version, publishes to npm under `@next`, and
-  creates a GitHub pre-release.
-- A manual `promote` workflow that moves the same artifact from `@next`
-  to `@latest` on npm and converts the GitHub pre-release into the
-  latest release. Gated by the `production` environment (required
-  reviewer approval).
-- `auto-merge.yml` enables auto-merge on every non-draft PR so the
-  publish chain closes without human intervention until the promote gate.
-- Conventional-commits → semver bump, with rules documented in `CLAUDE.md`.
+## Quick start
 
-## Use it
+```ts
+import { effigy, type Messages } from '@rhombus-redux/inferred-effigy';
 
-1. Click **Use this template** on GitHub (or `gh repo create
-   <new-name> --template fnrhombus/npm-template --public`).
-2. Run `claim-npm.ps1` to claim the npm package name with a placeholder
-   `0.0.0` publish (idempotent — re-running on an already-claimed package
-   is safe).
-3. Run `setup-gh.ps1` to merge template files into your repo, configure
-   branch protection + the `production` environment, set repo-level merge
-   settings (squash-only, PR title/body squash, linear history, auto-merge,
-   auto-delete-branch), and register GitHub Actions as a trusted publisher
-   on the npm package.
-4. Add the `AUTOMERGE_PAT` secret manually (Settings → Secrets and
-   variables → Actions → New repository secret). Classic PAT with `repo`
-   + `workflow` scopes. PAT — not `GITHUB_TOKEN` — because GitHub
-   suppresses workflow triggers for `GITHUB_TOKEN`-actored events, which
-   would prevent the post-merge `push` from triggering `publish-next`.
-5. Fill in the `lint`, `test`, and `build` steps in
-   `.github/workflows/ci.yml`'s `verify` job, and the corresponding
-   `npm run` scripts in `package.json`.
-6. Commit a `feat:` change on a branch and open a PR. Auto-merge enables;
-   when `verify` goes green it merges; `publish-next` runs; `@next` ships.
-7. When ready, go to Actions → "CI" → "Run workflow", approve the
-   `production` environment gate, and `@latest` updates.
+const handlers = {
+  increment(state: number, by: number) { return state + by; },
+  user: {
+    rename(state: number, name: string) { return state; },
+    avatar: {
+      clear(state: number) { return state; },
+    },
+  },
+};
 
-## Workflow files
+// The `reducer` transform drops the leading `state` param from each creator.
+const slice = effigy(handlers).withTransform('reducer');
 
-| File | Role |
-|---|---|
-| `ci.yml` | `verify` (lint/test/build), `publish-next` (semantic-release on push to main), `promote` (workflow_dispatch, @next → @latest, gated) |
-| `auto-merge.yml` | Enables auto-merge on every non-draft PR |
+// `dispatch` receives a discriminated union of every message in the tree.
+const creators = slice.getCreators((msg) => {
+  if (msg.type === 'user.rename') {
+    msg.payload; // Readonly<[name: string]>
+  }
+  return store.dispatch(msg);
+});
 
-## See also
+creators.increment(5);            // { type: 'increment',   payload: [5] }
+creators.user.rename('ada');      // { type: 'user.rename', payload: ['ada'] }
+creators.user.avatar.clear();     // { type: 'user.avatar.clear', payload: [] }
 
-- `CLAUDE.md` — conventions / discipline (branch policy, TDD, commit
-  conventions, release flow)
-- `claim-npm.ps1` — claim the npm package name (run first, before
-  configuring GitHub)
-- `setup-gh.ps1` — configure GitHub repo settings, branch protection,
-  environment, and npm trusted publisher (run second)
-- `.releaserc.json` — semantic-release config
+type Action = Messages<typeof handlers, 'reducer'>;
+//   | { type: 'increment';        payload: readonly [by: number] }
+//   | { type: 'user.rename';      payload: readonly [name: string] }
+//   | { type: 'user.avatar.clear'; payload: readonly [] }
+```
+
+## API
+
+- **`effigy(handlers)`** — the front door. Wraps a handler tree (any depth, string keys, function leaves) and returns an `EffigyBuilder` on the `'default'` transform.
+- **`EffigyBuilder#withTransform(key)`** — switch the payload transform (type-level only; the runtime always passes args through). Built in: `'default'` (identity) and `'reducer'` (drops the leading `state` param). Returns a new builder.
+- **`EffigyBuilder#getCreators(onInvoke?)`** — transpose the tree into creators. With no argument, each creator returns its `{ type, payload }` message. Pass an `onInvoke` callback (e.g. a `dispatch`) and each creator returns that callback's result instead; the callback receives the message as a discriminated union.
+- **`EffigyBuilder#squash()`** — flatten the handler tree to a single-level record keyed by dotted path (`{ 'user.rename': fn, ... }`), preserving the original function references.
+- **`Messages<Map, Key>`** — the union of every message the tree produces under the given transform (defaults to `'default'`).
+- **`Creators<...>`** — the transposed tree type: same shape, every leaf a creator function.
+
+### Custom transforms
+
+`PayloadTransforms` is an augmentable registry. Declaration-merge a new key, then pass it to `withTransform`:
+
+```ts
+declare module '@rhombus-redux/inferred-effigy' {
+  interface PayloadTransforms<TArgs extends readonly any[]> {
+    // drop the trailing argument
+    initless: TArgs extends readonly [...infer Rest, any] ? Readonly<Rest> : readonly [];
+  }
+}
+
+effigy(handlers).withTransform('initless').getCreators();
+```
+
+---
+
+> These docs are a skeleton and are being expanded.
