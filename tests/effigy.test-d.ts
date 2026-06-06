@@ -32,7 +32,8 @@ describe('negative type contracts (F6)', () => {
   it('accessing a nonexistent leaf on the creator tree is a type error', () => {
     const creators = effigy(demohandlers).getCreators();
     // @ts-expect-error 'doesNotExist' is not a key of the handler tree.
-    creators.doesNotExist;
+    const bad = creators.doesNotExist;
+    void bad;
   });
 });
 
