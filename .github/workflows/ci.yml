@@ -52,7 +52,9 @@ jobs:
     # Until then OIDC auto-detection would pre-empt token auth and fail, so we
     # authenticate with the NPM_TOKEN repo secret instead.
     permissions:
-      contents: write   # create git tags and GitHub releases
+      contents: write        # create git tags and GitHub releases
+      issues: write          # @semantic-release/github failure issues
+      pull-requests: write   # @semantic-release/github success comments
     steps:
       - uses: actions/checkout@v4
         with:
