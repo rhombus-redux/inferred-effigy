@@ -1,23 +1,48 @@
 import type { DeepDictionary, Dictionary, Func, Inc, Join } from './toolkit-types.js';
 import { flattenMap, type FlattenMap } from './flatten-map.js';
 
-/** The constraint for handler trees: arbitrarily nested string-keyed maps with function leaves. */
+/**
+ * The constraint for handler trees: arbitrarily nested string-keyed maps with
+ * function leaves. Use `satisfies HandlerMap` on a handler object to get an
+ * early error if a non-function leaf slips in.
+ *
+ * Keys must be literal strings (or numeric literals, which stringify); an
+ * index-signature map degrades the message `type` to `string`. See the
+ * Limitations section of the README.
+ */
 export type HandlerMap = DeepDictionary<Func>;
 
+/**
+ * A single message produced by a creator: the dotted-path string literal `T`
+ * as `type`, and the payload tuple `P` as shaped by the active transform.
+ */
 export type Message<T extends string, P extends readonly any[]> = { type: T, payload: P };
 
 /**
  * Registry of payload transforms — how a handler's parameter list maps to its
- * creator's parameter list / message payload. Augmentable from user code via
- * declaration merging; pass the key to `withTransform`.
+ * creator's parameter list / message payload. Augment it from user code with
+ * declaration merging to register custom transforms, then pass the key to
+ * {@link EffigyBuilder.withTransform}.
+ *
+ * Augmentation is **compilation-global**: merging a new key widens
+ * {@link TransformKey} for every `effigy` user in the same TypeScript program,
+ * not just the file that declares it.
+ *
+ * @typeParam TArgs - the handler's parameter tuple; each entry maps it to the
+ *   creator's parameter tuple under that transform.
  */
 export interface PayloadTransforms<TArgs extends readonly any[] = any> {
-  /** identity — creator takes exactly the handler's parameters */
+  /** identity — creator takes exactly the handler's parameters (mutable tuple) */
   default: TArgs;
   /** drops the leading state parameter — creator takes the handler's remaining parameters */
   reducer: TArgs extends readonly [any, ...infer Rest] ? Readonly<Rest> : readonly [];
 }
 
+/**
+ * The union of every registered transform name (the keys of
+ * {@link PayloadTransforms}). Widens automatically when `PayloadTransforms` is
+ * augmented — compilation-globally.
+ */
 export type TransformKey = keyof PayloadTransforms<any>;
 type Transform<Args extends readonly any[], Key extends TransformKey> = PayloadTransforms<Args>[Key];
 
@@ -76,10 +101,15 @@ export type Creators<
   T extends Func<infer Args> ? Func<Transform<Args, Key>, ([NoReturn] extends [Return] ? Message<Prefix, Transform<Args, Key>> : Return)> :
   never;
 
+/**
+ * The builder returned by {@link effigy} and {@link EffigyBuilder.withTransform}.
+ * Holds the handler tree and the active transform key; every method returns a
+ * new instance rather than mutating this one.
+ */
 export class EffigyBuilder<Map extends HandlerMap, Key extends TransformKey = 'default'> {
   readonly #map: Map;
   readonly #transformKey: Key;
-  /** Prefer the `effigy()` factory. */
+  /** Prefer the {@link effigy} factory. */
   constructor(map: Map, transformKey: Key) {
     this.#map = map;
     this.#transformKey = transformKey;
@@ -88,13 +118,42 @@ export class EffigyBuilder<Map extends HandlerMap, Key extends TransformKey = 'd
   get transformKey(): Key {
     return this.#transformKey;
   }
+  /**
+   * Returns a new builder with the transform key set to `K`; does not mutate
+   * this one. `K` must be a {@link TransformKey}. The switch is type-level only
+   * — it changes what TypeScript infers for creator parameter lists and the
+   * {@link Messages} union, never any runtime behaviour.
+   */
   withTransform<K extends TransformKey>(key: K): EffigyBuilder<Map, K> {
     return new EffigyBuilder(this.#map, key);
   }
+  /**
+   * Flattens the handler tree to a single-level record keyed by dotted path.
+   * Leaf functions are reference-identical to the originals (no wrapping), and
+   * the result is independent of the transform key.
+   *
+   * @throws if a leaf is neither a function nor a plain nested map (the error
+   *   names the dotted path and the value's type), or if a dotted key collides
+   *   with a nested path (e.g. `{ 'a.b': f, a: { b: g } }`).
+   */
   squash(): FlattenMap<Map> {
     return flattenMap(this.#map);
   }
+  /**
+   * Builds the creator tree: the same shape as the handler tree, but every leaf
+   * is a message creator returning `Message<path, payload>`. The root proxy is
+   * not callable — invoking it directly throws.
+   */
   getCreators(): Creators<Map, Key>;
+  /**
+   * Builds the creator tree, dispatch-bound: every leaf passes its message to
+   * `onInvoke` and returns that callback's result instead of the raw message.
+   * `onInvoke` receives the discriminated {@link Messages} union, so narrowing
+   * on `msg.type` yields the exact payload type for that path.
+   *
+   * @param onInvoke - called with each leaf's `{ type, payload }`; its return
+   *   type becomes every creator's return type.
+   */
   getCreators<TReturn>(onInvoke: Func<[msg: Messages<Map, Key>], TReturn>): Creators<Map, Key, TReturn>;
   getCreators(onInvoke?: any): any {
     function _getCreators(path?: string): any {
@@ -143,7 +202,18 @@ export class EffigyBuilder<Map extends HandlerMap, Key extends TransformKey = 'd
   }
 }
 
-/** Front door: wrap a handler tree, then `.withTransform(...)` / `.getCreators(...)`. */
+/**
+ * Front door: wrap a handler tree and return an {@link EffigyBuilder}
+ * preconfigured with the `'default'` transform. Chain `.withTransform(...)` to
+ * change the payload shape and `.getCreators(...)` / `.squash()` to consume it.
+ *
+ * Handler keys must be literal strings (numeric literals stringify); the tree
+ * may nest up to 9 levels deep — beyond that the types collapse to `never`.
+ * See the README Limitations section.
+ *
+ * @param handlers - an arbitrarily nested tree of string-keyed objects whose
+ *   leaves are functions. Use `satisfies HandlerMap` for early leaf checks.
+ */
 export function effigy<Map extends HandlerMap>(handlers: Map): EffigyBuilder<Map, 'default'> {
   return new EffigyBuilder(handlers, 'default');
 }
