@@ -32,6 +32,10 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+      # Consumer-typecheck smoke: pack the tarball and `tsc --noEmit` a small
+      # consumer under moduleResolution nodenext + bundler (skipLibCheck on and
+      # off). Catches a non-self-contained published d.ts before auto-merge.
+      - run: npm run check:consumer
 
   # ── Publish @next ─────────────────────────────────────────────────────────
   # Runs on every push to main. Uses semantic-release to determine the version
@@ -41,9 +45,14 @@ jobs:
     needs: verify
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # TODO: once a trusted publisher is configured on npmjs.com (package
+    # Settings → Trusted Publisher; workflow ci.yml, repo
+    # rhombus-redux/inferred-effigy, no environment), restore `id-token: write`
+    # here and drop the NPM_TOKEN env below to publish via OIDC provenance.
+    # Until then OIDC auto-detection would pre-empt token auth and fail, so we
+    # authenticate with the NPM_TOKEN repo secret instead.
     permissions:
       contents: write   # create git tags and GitHub releases
-      id-token: write   # npm provenance attestation
     steps:
       - uses: actions/checkout@v4
         with:
@@ -53,9 +62,13 @@ jobs:
           node-version: lts/*
           registry-url: https://registry.npmjs.org
       - run: npm ci
-      - run: npx semantic-release
+      # --no-install: semantic-release and its plugins are pinned in
+      # devDependencies, so run the installed version (reproducible) rather than
+      # letting npx float to latest.
+      - run: npx --no-install semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # ── Promote @next → @latest ───────────────────────────────────────────────
   # Triggered manually via "Run workflow" in the GitHub Actions UI.
@@ -69,9 +82,11 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: production
+    # TODO: restore `id-token: write` and drop NPM_TOKEN once a trusted
+    # publisher is configured on npmjs.com (see the publish-next TODO). Until
+    # then `npm dist-tag add` authenticates with the NPM_TOKEN repo secret.
     permissions:
       contents: write
-      id-token: write   # OIDC — npm trusted publisher auth
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -93,6 +108,8 @@ jobs:
           echo "Promoting $PACKAGE@$VERSION (@next → @latest)"
       - name: Promote @next → @latest on npm
         run: npm dist-tag add ${{ steps.resolve.outputs.package }}@${{ steps.resolve.outputs.version }} latest
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Promote GitHub pre-release → latest release
         run: gh release edit ${{ steps.resolve.outputs.tag }} --prerelease=false --latest
         env:
