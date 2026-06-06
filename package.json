@@ -26,6 +26,7 @@
     "build": "tsup",
     "test": "vitest run",
     "lint": "eslint .",
+    "check:consumer": "bash scripts/check-consumer.sh",
     "prepublishOnly": "npm run build"
   },
   "license": "MIT",
@@ -47,12 +48,10 @@
     "proxy",
     "command-pattern"
   ],
-  "dependencies": {
-    "@rhombus-toolkit/func": "^3.5.3",
-    "@rhombus-toolkit/type-helpers": "^1.10.0"
-  },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
+    "@rhombus-toolkit/func": "^3.5.3",
+    "@rhombus-toolkit/type-helpers": "^1.10.0",
     "eslint": "^9.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",

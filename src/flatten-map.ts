@@ -12,8 +12,7 @@
 // TODO: delete this module and re-export flattenMap from
 // @rhombus-toolkit/type-helpers once a version with a runtime-loadable root is
 // published.
-import type { Func } from '@rhombus-toolkit/func';
-import type { DeepDictionary, DeepDictionaryItem, Inc } from '@rhombus-toolkit/type-helpers';
+import type { DeepDictionary, DeepDictionaryItem, Func, Inc } from './toolkit-types.js';
 
 type fromEntries<T extends readonly [PropertyKey, any]> = {
   [E in T as E[0]]: E[1];

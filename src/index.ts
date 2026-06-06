@@ -1,5 +1,4 @@
-import type { Func } from '@rhombus-toolkit/func';
-import type { DeepDictionary, Dictionary, Inc, Join } from '@rhombus-toolkit/type-helpers';
+import type { DeepDictionary, Dictionary, Func, Inc, Join } from './toolkit-types.js';
 import { flattenMap } from './flatten-map.js';
 
 /** The constraint for handler trees: arbitrarily nested string-keyed maps with function leaves. */
